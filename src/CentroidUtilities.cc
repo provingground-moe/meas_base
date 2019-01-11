@@ -190,7 +190,7 @@ bool CentroidChecker::operator()(afw::table::SourceRecord &record) const {
     if (!_doFootprintCheck && _maxDistFromPeak < 0.0) {
         return false;
     }
-    PTR(afw::detection::Footprint) footprint = record.getFootprint();
+    std::shared_ptr<afw::detection::Footprint> footprint = record.getFootprint();
     if (!footprint) {
         throw LSST_EXCEPT(pex::exceptions::RuntimeError, "No Footprint attached to record");
     }
