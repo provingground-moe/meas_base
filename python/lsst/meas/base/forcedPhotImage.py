@@ -66,13 +66,12 @@ class ForcedPhotImageConfig(lsst.pipe.base.PipelineTaskConfig):
         storageClass="SourceCatalog",
         dimensions=["skymap", "tract", "patch"],
     )
-    refWcs = lsst.pipe.base.InputDatasetField(
-        doc="Reference world coordinate system.",
-        nameTemplate="{inputCoaddName}Coadd",
+    skyMap = lsst.pipe.base.InputDatasetField(
+        doc="SkyMap dataset that defines the coordinate system of the reference catalog.",
+        nameTemplate="{inputCoaddName}Coadd_skyMap",
         scalar=True,
-        manualLoad=True,
-        storageClass="ExposureF",
-        dimensions=["abstract_filter", "skymap", "tract", "patch"],
+        storageClass="SkyMap",
+        dimensions=["skymap"],
     )
     measCat = lsst.pipe.base.OutputDatasetField(
         doc="Output forced photometry catalog.",
@@ -178,7 +177,9 @@ class ForcedPhotImageTask(lsst.pipe.base.PipelineTask, lsst.pipe.base.CmdLineTas
         return {"outputSchema": lsst.afw.table.SourceCatalog(self.measurement.schema)}
 
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
-        inputData['refWcs'] = butler.get(f"{self.config.refWcs.name}.wcs", inputDataIds["refWcs"])
+        tract = outputDataIds["measCat"]["tract"]
+        skyMap = inputData.pop("skyMap")
+        inputData['refWcs'] = skyMap[tract].getWcs()
         inputData['measCat'] = self.generateMeasCat(inputDataIds['exposure'],
                                                     inputData['exposure'],
                                                     inputData['refCat'], inputData['refWcs'],

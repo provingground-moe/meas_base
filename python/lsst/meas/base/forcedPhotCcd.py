@@ -206,7 +206,9 @@ class ForcedPhotCcdTask(ForcedPhotImageTask):
     dataPrefix = ""
 
     def adaptArgsAndRun(self, inputData, inputDataIds, outputDataIds, butler):
-        inputData['refWcs'] = butler.get(f"{self.config.refWcs.name}.wcs", inputDataIds["refWcs"])
+        tract = outputDataIds["measCat"]["tract"]
+        skyMap = inputData.pop("skyMap")
+        inputData['refWcs'] = skyMap[tract].getWcs()
         inputData['refCat'] = self.filterReferences(inputData['exposure'],
                                                     inputData['refCat'], inputData['refWcs'])
         inputData['measCat'] = self.generateMeasCat(inputDataIds['exposure'],
