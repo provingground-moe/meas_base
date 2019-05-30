@@ -157,6 +157,8 @@ class ForcedPhotCcdConfig(ForcedPhotImageConfig):
         self.outputSchema.nameTemplate = "forced_src_schema"
         self.exposure.nameTemplate = "{inputName}"
         self.exposure.dimensions = ["instrument", "visit", "detector"]
+        # A single detector may overlap multiple patches, so multiple refCats.
+        self.refCat.scalar = False
         self.measCat.nameTemplate = "forced_src"
         self.measCat.dimensions = ["instrument", "visit", "detector", "skymap", "tract"]
 
@@ -209,8 +211,8 @@ class ForcedPhotCcdTask(ForcedPhotImageTask):
         tract = outputDataIds["measCat"]["tract"]
         skyMap = inputData.pop("skyMap")
         inputData['refWcs'] = skyMap[tract].getWcs()
-        inputData['refCat'] = self.filterReferences(inputData['exposure'],
-                                                    inputData['refCat'], inputData['refWcs'])
+        inputData['refCat'] = self.mergeAndFilterReferences(inputData['exposure'],
+                                                            inputData['refCat'], inputData['refWcs'])
         inputData['measCat'] = self.generateMeasCat(inputDataIds['exposure'],
                                                     inputData['exposure'],
                                                     inputData['refCat'], inputData['refWcs'],
@@ -218,7 +220,7 @@ class ForcedPhotCcdTask(ForcedPhotImageTask):
 
         return self.run(**inputData)
 
-    def filterReferences(self, exposure, refCat, refWcs):
+    def mergeAndFilterReferences(self, exposure, refCats, refWcs):
         """Filter reference catalog so that all sources are within the
         boundaries of the exposure.
 
@@ -226,8 +228,8 @@ class ForcedPhotCcdTask(ForcedPhotImageTask):
         ----------
         exposure : `lsst.afw.image.exposure.Exposure`
             Exposure to generate the catalog for.
-        refCat : `lsst.afw.table.SourceCatalog`
-            Catalog of shapes and positions at which to force photometry.
+        refCats : sequence of `lsst.afw.table.SourceCatalog`
+            Catalogs of shapes and positions at which to force photometry.
         refWcs : `lsst.afw.image.SkyWcs`
             Reference world coordinate system.
 
@@ -257,36 +259,19 @@ class ForcedPhotCcdTask(ForcedPhotImageTask):
         expPolygon = lsst.sphgeom.ConvexPolygon(expSkyCorners)
 
         # Step 2: Filter out reference catalog sources that are
-        # not contained within the exposure boundaries.
-        sources = type(refCat)(refCat.table)
-        for record in refCat:
-            if expPolygon.contains(record.getCoord().getVector()):
-                sources.append(record)
-        refCatIdDict = {ref.getId(): ref.getParent() for ref in sources}
-
-        # Step 3: Cull sources that do not have their parent
-        # source in the filtered catalog.  Save two copies of each
-        # source.
-        refSources = type(refCat)(refCat.table)
-        for record in refCat:
-            if expPolygon.contains(record.getCoord().getVector()):
-                recordId = record.getId()
-                topId = recordId
-                while (topId > 0):
-                    if topId in refCatIdDict:
-                        topId = refCatIdDict[topId]
-                    else:
-                        break
-                if topId == 0:
-                    refSources.append(record)
-
-        # Step 4: Transform source footprints from the reference
-        # coordinates to the exposure coordinates.
-        for refRecord in refSources:
-            refRecord.setFootprint(refRecord.getFootprint().transform(refWcs,
-                                                                      expWcs, expRegion))
-        # Step 5: Replace reference catalog with filtered source list.
-        return refSources
+        # not contained within the exposure boundaries, or whose
+        # parents are not within the exposure boundaries.  Note
+        # that within a single input refCat, the parents always
+        # appear before the children.
+        mergedRefCat = lsst.afw.table.SourceCatalog(refCats[0].table)
+        for refCat in refCats:
+            containedIds = {0}  # zero as a parent ID means "this is a parent"
+            for record in refCat:
+                if expPolygon.contains(record.getCoord().getVector()) and record.getParent() in containedIds:
+                    record.setFootprint(record.getFootprint().transform(refWcs, expWcs, expRegion))
+                    mergedRefCat.append(record)
+                    containedIds.add(record.getId())
+        return mergedRefCat
 
     def makeIdFactory(self, dataRef):
         """Create an object that generates globally unique source IDs.
