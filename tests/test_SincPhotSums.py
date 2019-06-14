@@ -221,11 +221,15 @@ class SincCoeffTestCase(lsst.utils.tests.TestCase):
 
     def assertCached(self, coeff1, coeff2):
         np.testing.assert_array_equal(coeff1.getArray(), coeff2.getArray())
-        self.assertEqual(coeff1.getId(), coeff2.getId())
+        # This compares the memory address and read-only attributes of the images.
+        self.assertEqual(coeff1.array.__array_interface__['data'],
+                         coeff2.array.__array_interface__['data'])
 
     def assertNotCached(self, coeff1, coeff2):
         np.testing.assert_array_equal(coeff1.getArray(), coeff2.getArray())
-        self.assertNotEqual(coeff1.getId(), coeff2.getId())
+        # This compares the memory address and read-only attributes of the images.
+        self.assertNotEqual(coeff1.array.__array_interface__['data'],
+                            coeff2.array.__array_interface__['data'])
 
     def getCoeffCircle(self, radius2):
         circle = afwEll.Axes(radius2, radius2, 0.0)
